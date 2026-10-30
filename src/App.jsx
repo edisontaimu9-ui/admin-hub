@@ -9,6 +9,24 @@ function colorFor(name) {
   return COLORS[h % COLORS.length]
 }
 
+const DISMISS_KEY = 'admin-hub:install-dismissed'
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+}
+
+function isIos() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent)
+}
+
+function readDismissed() {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 function hostOf(url) {
   try {
     return new URL(url).host
@@ -110,22 +128,25 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(null) // null | 'new' | link object
   const [menuOpen, setMenuOpen] = useState(false)
-  const [installEvent, setInstallEvent] = useState(null)
+  const [installEvent, setInstallEvent] = useState(() => window.__installEvent ?? null)
+  const [installed, setInstalled] = useState(() => isStandalone())
+  const [dismissed, setDismissed] = useState(readDismissed)
   const [toast, setToast] = useState('')
   const fileRef = useRef(null)
 
   useEffect(() => saveLinks(links), [links])
 
   useEffect(() => {
-    const onPrompt = (e) => {
-      e.preventDefault()
-      setInstallEvent(e)
+    const onReady = () => setInstallEvent(window.__installEvent ?? null)
+    const onInstalled = () => {
+      window.__installEvent = null
+      setInstallEvent(null)
+      setInstalled(true)
     }
-    const onInstalled = () => setInstallEvent(null)
-    window.addEventListener('beforeinstallprompt', onPrompt)
+    window.addEventListener('admin-hub:install-ready', onReady)
     window.addEventListener('appinstalled', onInstalled)
     return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt)
+      window.removeEventListener('admin-hub:install-ready', onReady)
       window.removeEventListener('appinstalled', onInstalled)
     }
   }, [])
@@ -177,8 +198,19 @@ export default function App() {
   async function install() {
     if (!installEvent) return
     installEvent.prompt()
-    await installEvent.userChoice
+    const { outcome } = await installEvent.userChoice
+    window.__installEvent = null
     setInstallEvent(null)
+    if (outcome === 'accepted') setInstalled(true)
+  }
+
+  function dismissInstall() {
+    setDismissed(true)
+    try {
+      localStorage.setItem(DISMISS_KEY, '1')
+    } catch {
+      // ignore
+    }
   }
 
   function exportLinks() {
@@ -215,7 +247,6 @@ export default function App() {
           <p className="sub">{links.length} {links.length === 1 ? 'panel' : 'panels'}</p>
         </div>
         <div className="top-actions">
-          {installEvent && <button className="btn small primary" onClick={install}>Install</button>}
           <div className="menu-wrap">
             <button className="btn small icon-btn" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
@@ -239,6 +270,28 @@ export default function App() {
         onChange={(e) => setQuery(e.target.value)}
         aria-label="Search panels"
       />
+
+      {!installed && !dismissed && (
+        <div className="install-banner" role="region" aria-label="Install Admin Hub">
+          <span className="install-badge" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+          </span>
+          <div className="install-text">
+            <strong>Install Admin Hub</strong>
+            <span>
+              {installEvent
+                ? 'Open all your admin panels from your home screen, even offline.'
+                : isIos()
+                  ? 'Tap the Share button, then Add to Home Screen.'
+                  : 'Open your browser menu, then tap Install app or Add to Home screen.'}
+            </span>
+          </div>
+          <div className="install-actions">
+            {installEvent && <button className="btn small primary" onClick={install}>Install</button>}
+            <button className="btn small" onClick={dismissInstall}>Not now</button>
+          </div>
+        </div>
+      )}
 
       <main>
         {links.length === 0 && (

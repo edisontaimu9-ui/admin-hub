@@ -8,6 +8,14 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Admin Hub</title>
+    <script>
+      // Registered before anything else loads so Chrome's install prompt is never missed.
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault()
+        window.__installEvent = e
+        window.dispatchEvent(new Event('admin-hub:install-ready'))
+      })
+    </script>
   </head>
   <body>
     <div id="root"></div>
